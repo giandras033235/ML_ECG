@@ -1,0 +1,172 @@
+
+import numpy as np 
+import pandas as pd 
+import matplotlib.pyplot as plt
+from sklearn.utils import shuffle
+from sklearn.model_selection import train_test_split
+from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import StratifiedKFold
+from sklearn.metrics import classification_report
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import accuracy_score
+from sklearn.linear_model import LogisticRegression
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from sklearn.naive_bayes import GaussianNB
+from sklearn.svm import SVC
+import tensorflow as tf 
+from keras.models import Sequential
+from keras.layers import Dense ,Dropout, BatchNormalization
+from keras.callbacks import EarlyStopping ,ReduceLROnPlateau ,ModelCheckpoint
+#from keras.optimizers import SGD
+from sklearn.metrics import classification_report
+
+import seaborn as sns
+from sklearn.metrics import confusion_matrix
+
+SINGLE_DETECT_VALUE = 85000
+
+def ml_function(argument): 
+   classes={'N': 0, 'S': 1, 'V': 2, 'F': 3, 'Q': 4}
+
+   if argument =="tensorflow":
+         
+
+         data=pd.read_csv('/Users/gergelyandras/Desktop/temp/python/PanTomkins/archive/mitbih_train.csv',header=None,index_col=False)
+         print("data.head")
+         print(data.head())
+         print("X_train")
+         X_train=data.iloc[:,:-1] #columns without the last column
+         single_detect = X_train.iloc[[SINGLE_DETECT_VALUE]]
+         y_train=data.iloc[:,-1]  #last column
+         single_detect_result = y_train.iloc[[SINGLE_DETECT_VALUE]]
+         X_train,y_train=shuffle(X_train,y_train)
+         X_train,X_test,y_train,y_test = train_test_split(X_train,y_train,test_size=0.3) #train data 80% test data 20%
+         X_test,y_test = shuffle(X_test,y_test)
+         X_test,X_val,y_test,y_val =train_test_split(X_test,y_test,test_size=0.5)        #50%test data 50% validation data
+
+         earlyStopping=EarlyStopping(patience=10,mode='max',monitor='val_loss',restore_best_weights=True)
+         reduceLR=ReduceLROnPlateau(monitor='val_loss',min_lr=0.0001)
+         modelCheck=ModelCheckpoint(filepath='model.h5',monitor='val_loss',save_best_only=True)
+         callbacks=[earlyStopping,reduceLR,modelCheck]
+
+         model=Sequential([
+                           Dense(256,activation='relu',input_shape=(187,)),
+                           BatchNormalization(),
+            
+                           Dense(512,activation='relu'),
+                           BatchNormalization(),
+            
+                           Dense(256,activation='relu'),
+                           BatchNormalization(),
+            
+                           Dense(5,activation='softmax')
+                        ])
+        
+         model.summary()
+         
+         #opt = SGD(lr=0.01, momentum=0.9, decay=0.01)
+         model.compile(optimizer='SGD',loss=tf.keras.losses.sparse_categorical_crossentropy,metrics=['accuracy']) #optimizer adam changed to SGD
+
+         history=model.fit(X_train,y_train,validation_data=(X_val,y_val),epochs=100,batch_size=128,
+                        callbacks=callbacks
+                        )
+
+         sns.set()
+
+         acc = history.history['accuracy']
+         val_acc = history.history['val_accuracy']
+         loss = history.history['loss']
+         val_loss = history.history['val_loss']
+         epochs = range(1, len(loss) + 1)
+
+         plt.plot(epochs, acc, color='green', label='Training Accuracy')
+         plt.plot(epochs, val_acc, color='blue', label='Validation Accuracy')
+         plt.title('Training and Validation Accuracy')
+         plt.ylabel('Accuracy')
+         plt.xlabel('Epoch')
+         plt.legend()
+
+         plt.figure()
+         #loss plot
+         plt.plot(epochs, loss, color='green', label='Training Loss')
+         plt.plot(epochs, val_loss, color='red', label='Validation Loss')
+         plt.title('Training and Validation Loss')
+         plt.xlabel('Epoch')
+         plt.ylabel('Loss')
+         plt.legend()
+
+         plt.show()
+
+         pd.DataFrame(history.history).plot(figsize=(8, 5))
+         plt.grid(True)
+         plt.gca().set_ylim(0, 1)
+         plt.show()
+   
+         model.evaluate(X_test,y_test)
+
+         predictions = model.predict(X_test)
+         print(accuracy_score(y_test,predictions.argmax(axis=1)))
+         print(classification_report(y_test, predictions.argmax(axis=1)))
+         print(confusion_matrix(y_test, predictions.argmax(axis=1)))
+         actual_result=model.predict(single_detect)
+         if actual_result.argmax() == single_detect_result.item() :
+            for elem in classes:
+               if classes[elem] == single_detect_result.item():
+                  print("Succesful detection with class {}".format(elem))
+         else:
+            print("Actual and expected result are not identical. False detection")
+
+         
+         
+   elif argument == "scipy":
+
+      data=pd.read_csv('/Users/gergelyandras/Desktop/temp/python/PanTomkins/archive/mitbih_train.csv',header=None,index_col=False)
+      #print(dataset.describe())
+      X=data.iloc[:,:-1] #columns without the last column
+      single_detect = X.iloc[[SINGLE_DETECT_VALUE]]
+      y=data.iloc[:,-1]
+      single_detect_result = y.iloc[[SINGLE_DETECT_VALUE]]
+      X_train, X_validation, y_train, y_validation = train_test_split(X, y, test_size=0.20, random_state=1)
+      # models = []
+      # models.append(('LR', LogisticRegression(solver='liblinear', multi_class='ovr')))
+      # models.append(('LDA', LinearDiscriminantAnalysis()))
+      # models.append(('KNN', KNeighborsClassifier()))
+      # models.append(('CART', DecisionTreeClassifier()))
+      # models.append(('NB', GaussianNB()))
+      # models.append(('SVM', SVC(gamma='auto')))
+      # # evaluate each model in turn
+      # results = []
+      # names = []
+      # for name, model in models:
+      #    kfold = StratifiedKFold(n_splits=10, random_state=1, shuffle=True)
+      #    cv_results = cross_val_score(model, X_train, y_train, cv=kfold, scoring='accuracy')
+      #    results.append(cv_results)
+      #    names.append(name)
+      #    print('%s: %f (%f)' % (name, cv_results.mean(), cv_results.std()))
+      # plt.boxplot(results, labels=names)
+      # plt.title('Algorithm Comparison')
+      # plt.show()
+      print("single_inputx.shape:{}".format(single_detect.shape))
+      print("Type of x {}".format(type(X[8])))
+      print("Xvalidation.shape:{}".format(X_validation.shape))
+      print("-----")
+      model = KNeighborsClassifier()
+      model.fit(X_train, y_train)
+      predictions = model.predict(X_validation)
+      print(accuracy_score(y_validation, predictions))
+      print(confusion_matrix(y_validation, predictions))
+      print(classification_report(y_validation, predictions))
+      actual_result=model.predict(single_detect)
+
+      if (actual_result == single_detect_result).bool() :
+         for elem in classes:
+            if classes[elem] == single_detect_result.item():
+               print("Succesful detection with class {}".format(elem))
+      else:
+         print("Actual and expected result are not identical. False detection")
+if __name__ == "__main__":
+   print("Start of Program")
+   ml_function("tensorflow")
+   print("---End of program---")
