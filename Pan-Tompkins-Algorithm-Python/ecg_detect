@@ -1,134 +1,275 @@
 
 import numpy as np 
 import pandas as pd 
+from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
 from sklearn.utils import shuffle
+from sklearn.preprocessing import StandardScaler
+from sklearn.linear_model import LinearRegression
 from sklearn.model_selection import train_test_split
 from sklearn.model_selection import cross_val_score
 from sklearn.model_selection import StratifiedKFold
-from sklearn.metrics import classification_report
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import classification_report, log_loss,hamming_loss,zero_one_loss
+from sklearn.metrics import confusion_matrix,plot_confusion_matrix
 from sklearn.metrics import accuracy_score
 from sklearn.linear_model import LogisticRegression
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.neighbors import KNeighborsClassifier
+from sklearn.neighbors import KNeighborsClassifier 
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.naive_bayes import GaussianNB
 from sklearn.svm import SVC
+from sklearn.utils import resample
 import tensorflow as tf 
 from keras.models import Sequential
+from keras.layers import Conv1D, MaxPooling1D, Flatten, Dense, Dropout, BatchNormalization
 from keras.layers import Dense ,Dropout, BatchNormalization
 from keras.callbacks import EarlyStopping ,ReduceLROnPlateau ,ModelCheckpoint
+from keras.losses import mean_squared_error, mean_squared_logarithmic_error
 #from keras.optimizers import SGD
 from sklearn.metrics import classification_report
+from scipy import stats
+from sklearn.preprocessing import Normalizer
+from sklearn.preprocessing import StandardScaler
+from keras.utils.np_utils import to_categorical
+from datetime import datetime
+
+import itertools
+
 
 import seaborn as sns
 from sklearn.metrics import confusion_matrix
 
-SINGLE_DETECT_VALUE = 85000
+SINGLE_DETECT_VALUE = 75000
+
+def calculate_vif(df, features):    
+    vif, tolerance = {}, {}
+    # all the features that you want to examine
+    for feature in features:
+        # extract all the other features you will regress against
+        X = [f for f in features if f != feature]        
+        X, y = df[X], df[feature]
+        # extract r-squared from the fit
+        r2 = LinearRegression().fit(X, y).score(X, y)                
+        
+        # calculate tolerance
+        tolerance[feature] = 1 - r2
+        # calculate VIF
+        vif[feature] = 1/(tolerance[feature])
+    # return VIF DataFrame
+    return pd.DataFrame({'VIF': vif, 'Tolerance': tolerance})
+
+
+def plotCorrelationMatrix(df, graphWidth):
+    filename = df.dataframeName
+    df = df.dropna('columns') # drop columns with NaN
+    df = df[[col for col in df if df[col].nunique() > 1]] # keep columns where there are more than 1 unique values
+    if df.shape[1] < 2:
+        print(f'No correlation plots shown: The number of non-NaN or constant columns ({df.shape[1]}) is less than 2')
+        return
+    corr = df.corr() #corr() is used to find the pairwise correlation of all columns
+    plt.figure(num=None, figsize=(graphWidth, graphWidth), dpi=80, facecolor='w', edgecolor='k')
+    corrMat = plt.matshow(corr, fignum = 1)
+    plt.xticks(range(len(corr.columns)), corr.columns, rotation=90)
+    plt.yticks(range(len(corr.columns)), corr.columns)
+    plt.gca().xaxis.tick_bottom()
+    plt.colorbar(corrMat)
+    plt.title(f'Correlation Matrix for {filename}', fontsize=15)
+    plt.show()
+
+def plot_confusion_matrix(cm, classes,
+                          normalize=False,
+                          title='Confusion matrix',
+                          cmap=plt.cm.Blues):
+    """
+    This function prints and plots the confusion matrix.
+    Normalization can be applied by setting `normalize=True`.
+    """
+    if normalize:
+        cm = cm.astype('float') / cm.sum(axis=1)[:, np.newaxis]
+        print("Normalized confusion matrix")
+    else:
+        print('Confusion matrix, without normalization')
+
+    plt.imshow(cm, interpolation='nearest', cmap=cmap)
+    plt.title(title)
+    plt.colorbar()
+    tick_marks = np.arange(len(classes))
+    plt.xticks(tick_marks, classes, rotation=45)
+    plt.yticks(tick_marks, classes)
+
+    fmt = '.2f' if normalize else 'd'
+    thresh = cm.max() / 2.
+    for i, j in itertools.product(range(cm.shape[0]), range(cm.shape[1])):
+        plt.text(j, i, format(cm[i, j], fmt),
+                 horizontalalignment="center",
+                 color="white" if cm[i, j] > thresh else "black")
+
+    plt.tight_layout()
+    plt.ylabel('True label')
+    plt.xlabel('Predicted label')
 
 def ml_function(argument): 
    classes={'N': 0, 'S': 1, 'V': 2, 'F': 3, 'Q': 4}
-
+   starttime = datetime.now()
    if argument =="tensorflow":
-         
-
-         data=pd.read_csv('/Users/gergelyandras/Desktop/temp/python/PanTomkins/archive/mitbih_train.csv',header=None,index_col=False)
-         print("data.head")
-         print(data.head())
+           
+         df1=pd.read_csv('/Users/gergelyandras/Desktop/temp/python/PanTomkins/archive/mitbih_train.csv',header=None,index_col=False)
+         train_df = pd.read_csv('/Users/gergelyandras/Desktop/temp/python/PanTomkins/archive/mitbih_train.csv',header=None)
+         test_df = pd.read_csv('/Users/gergelyandras/Desktop/temp/python/PanTomkins/archive/mitbih_test.csv',header=None)
+         print("df1.head")
+         print(df1.head())
          print("X_train")
-         X_train=data.iloc[:,:-1] #columns without the last column
-         single_detect = X_train.iloc[[SINGLE_DETECT_VALUE]]
-         y_train=data.iloc[:,-1]  #last column
-         single_detect_result = y_train.iloc[[SINGLE_DETECT_VALUE]]
-         X_train,y_train=shuffle(X_train,y_train)
-         X_train,X_test,y_train,y_test = train_test_split(X_train,y_train,test_size=0.3) #train data 80% test data 20%
-         X_test,y_test = shuffle(X_test,y_test)
-         X_test,X_val,y_test,y_val =train_test_split(X_test,y_test,test_size=0.5)        #50%test data 50% validation data
+
+         df_0 = train_df[train_df[187]==0.0].sample(n=16000, random_state=1)
+         df_1 = train_df[train_df[187]==1.0]
+         df_2 = train_df[train_df[187]==2.0]
+         df_3 = train_df[train_df[187]==3.0]
+         df_4 = train_df[train_df[187]==4.0]
+         # upsample
+         df_1_up=resample(df_1, replace=True, n_samples=20000, random_state=1)
+         df_2_up=resample(df_2, replace=True, n_samples=20000, random_state=1)
+         df_3_up=resample(df_3, replace=True, n_samples=20000, random_state=1)
+         df_4_up=resample(df_4, replace=True, n_samples=20000, random_state=1)
+
+         train_df = pd.concat([df_0, df_1_up, df_2_up, df_3_up, df_4_up])
+
+         y_train = to_categorical(train_df[187])
+         y_test = to_categorical(test_df[187])
+
+         x_train = train_df.iloc[:,:186].values
+         x_test = test_df.iloc[:,:186].values
+        
+
+         x_train = x_train.reshape(len(x_train), x_train.shape[1],1)
+         x_test = x_test.reshape(len(x_test), x_test.shape[1],1)  #50%test df1 50% validation data
+               
+
 
          earlyStopping=EarlyStopping(patience=10,mode='max',monitor='val_loss',restore_best_weights=True)
          reduceLR=ReduceLROnPlateau(monitor='val_loss',min_lr=0.0001)
          modelCheck=ModelCheckpoint(filepath='model.h5',monitor='val_loss',save_best_only=True)
          callbacks=[earlyStopping,reduceLR,modelCheck]
 
-         model=Sequential([
-                           Dense(256,activation='relu',input_shape=(187,)),
-                           BatchNormalization(),
-            
-                           Dense(512,activation='relu'),
-                           BatchNormalization(),
-            
-                           Dense(256,activation='relu'),
-                           BatchNormalization(),
-            
-                           Dense(5,activation='softmax')
-                        ])
-        
-         model.summary()
+         cnn = Sequential()
+         cnn.add(Conv1D(128,3,input_shape=(x_train.shape[1],1), activation='relu'))
+         cnn.add(BatchNormalization())
+         cnn.add(MaxPooling1D(pool_size=2))
+         cnn.add(Conv1D(64,3, activation='relu'))
+         cnn.add(BatchNormalization())
+         cnn.add(MaxPooling1D(pool_size=2))
+         cnn.add(Conv1D(64,2, activation='relu'))
+         cnn.add(BatchNormalization())
+         cnn.add(MaxPooling1D(pool_size=2))
+         cnn.add(Conv1D(64,2, activation='relu'))
+         cnn.add(Flatten())
+         cnn.add(Dense(128, activation='relu'))
+         cnn.add(Dropout(0.5))
+         cnn.add(Dense(64, activation='relu'))
+         cnn.add(Dense(5, activation='softmax'))
          
          #opt = SGD(lr=0.01, momentum=0.9, decay=0.01)
-         model.compile(optimizer='SGD',loss=tf.keras.losses.sparse_categorical_crossentropy,metrics=['accuracy']) #optimizer adam changed to SGD
+         cnn.compile(loss=tf.keras.losses.MeanAbsolutePercentageError(),optimizer='adam',metrics=['accuracy'])
+         #cnn.compile(loss=tf.keras.losses.Poisson(),optimizer='adam',metrics=['accuracy'])
+         #cnn.compile(loss=tf.keras.losses.mse,optimizer='adam',metrics=['accuracy'])
+         #cnn.compile(loss=tf.keras.losses.'mean_squared_logarithmic_error',optimizer='adam',metrics=['accuracy'])
+         #cnn.compile(loss=tf.keras.losses.'categorical_crossentropy',optimizer='adam',metrics=['accuracy'])
+         callbacks = [EarlyStopping(monitor='val_loss', patience=8), ModelCheckpoint(filepath='./best_weights.h5', monitor='val_loss', save_best_only=True)]
+         cnn.summary()
 
-         history=model.fit(X_train,y_train,validation_data=(X_val,y_val),epochs=100,batch_size=128,
-                        callbacks=callbacks
-                        )
+         cnn.fit(x_train, y_train,steps_per_epoch=10000, epochs=100, callbacks=callbacks, batch_size=32, validation_data=(x_test,y_test))
 
          sns.set()
-
-         acc = history.history['accuracy']
-         val_acc = history.history['val_accuracy']
-         loss = history.history['loss']
-         val_loss = history.history['val_loss']
-         epochs = range(1, len(loss) + 1)
-
-         plt.plot(epochs, acc, color='green', label='Training Accuracy')
-         plt.plot(epochs, val_acc, color='blue', label='Validation Accuracy')
-         plt.title('Training and Validation Accuracy')
-         plt.ylabel('Accuracy')
-         plt.xlabel('Epoch')
-         plt.legend()
-
-         plt.figure()
-         #loss plot
-         plt.plot(epochs, loss, color='green', label='Training Loss')
-         plt.plot(epochs, val_loss, color='red', label='Validation Loss')
-         plt.title('Training and Validation Loss')
-         plt.xlabel('Epoch')
-         plt.ylabel('Loss')
-         plt.legend()
-
-         plt.show()
-
-         pd.DataFrame(history.history).plot(figsize=(8, 5))
-         plt.grid(True)
-         plt.gca().set_ylim(0, 1)
-         plt.show()
-   
-         model.evaluate(X_test,y_test)
-
-         predictions = model.predict(X_test)
-         print(accuracy_score(y_test,predictions.argmax(axis=1)))
-         print(classification_report(y_test, predictions.argmax(axis=1)))
-         print(confusion_matrix(y_test, predictions.argmax(axis=1)))
-         actual_result=model.predict(single_detect)
-         if actual_result.argmax() == single_detect_result.item() :
-            for elem in classes:
-               if classes[elem] == single_detect_result.item():
-                  print("Succesful detection with class {}".format(elem))
-         else:
-            print("Actual and expected result are not identical. False detection")
-
          
-         
+         scores = cnn.evaluate(x_test,y_test, verbose=1)
+         print(scores)
+         y_predict = cnn.predict(x_test)
+         #print(accuracy_score(y_test,y_predict.argmax(axis=1)))
+         cf_matrix = confusion_matrix(y_test.argmax(axis=1),y_predict.argmax(axis=1))
+         print(cf_matrix)
+         #print(classification_report(y_test, y_predict.argmax(axis=1)))
+         #print(confusion_matrix(y_test, y_predict.argmax(axis=1),normalize="true"))
+         plt.figure(figsize=(10, 10))
+         plot_confusion_matrix(cf_matrix, classes=['N', 'S', 'V', 'F', 'Q'],normalize=True,title='Confusion matrix, with normalization - CNN')
+         plt.show()
+      
+         endtime = datetime.now()
+         print("Time of Execution for CNN:{}".format(starttime-endtime))
+
+####################################################################################################################################################################################################################################
+####################################################################################################################################################################################################################################         
+
    elif argument == "scipy":
+      df1=pd.read_csv('/Users/gergelyandras/Desktop/temp/python/PanTomkins/archive/mitbih_train.csv',header=None,index_col=False)
+      df1.dataframeName = 'mitbih_test.csv'
+      print("Distribution of type of classes")
+      train_target = df1[187].value_counts()
+      print(train_target)
+      #plt.bar(train_target.index,train_target.values, color = sns.color_palette()[0]) plot the distribution of classes
+      #plt.show()
+      #print("Correlation:")
+      #print(df1.corr())
+      #print("Calc_VIF")
+      #print(calculate_vif(df=df1, features=df1.columns[:45]))
+      #print(df1.describe())
+      #Missing values are eliminated
+      #Rows with missing vlaues are eliminated
+      #Columns with a lot of missing values are eliminated
+      # plotCorrelationMatrix(df1, 47)
+      
+      #Resampling unbalanced dataset
+      target1=df1[df1[187]==1]
+      target2=df1[df1[187]==2]
+      target3=df1[df1[187]==3]
+      target4=df1[df1[187]==4]
+      target0=(df1[df1[187]==0]).sample(n=20000,random_state=42)
 
-      data=pd.read_csv('/Users/gergelyandras/Desktop/temp/python/PanTomkins/archive/mitbih_train.csv',header=None,index_col=False)
-      #print(dataset.describe())
-      X=data.iloc[:,:-1] #columns without the last column
+      target1_sample=resample(target1,replace=True,n_samples=20000,random_state=0)
+      target2_sample=resample(target2,replace=True,n_samples=20000,random_state=0)
+      target3_sample=resample(target3,replace=True,n_samples=20000,random_state=0)
+      target4_sample=resample(target4,replace=True,n_samples=20000,random_state=0)
+
+      train_data=pd.concat([target0,target1_sample,target2_sample,target3_sample,target4_sample])
+      
+      train_target = train_data[187].value_counts()
+      
+      print("Distribution after resampling")
+      print(train_target)
+
+
+      #Plotting distribution
+      #plt.bar(train_target.index,train_target.values, color = 'green')
+      #plt.show()
+
+      
+      effictive_list = []
+      for i in train_data.columns:
+         if i != 187:
+            pearson_coef, p_value = stats.pearsonr(train_data[i], train_data[187]) #The Pearson correlation coefficient [1] measures the linear relationship between two datasets
+            effictive_list.append((f'column number : {i}', f'Pearson Correlation {pearson_coef}', f'P-value : {p_value}'))
+         else: break
+
+      print("Column with max correlation and minimum p-value")
+      print(max(effictive_list))
+      print('-' * 50)
+
+
+
+      X=train_data.iloc[:,:-1] #columns without the last column
       single_detect = X.iloc[[SINGLE_DETECT_VALUE]]
-      y=data.iloc[:,-1]
+      y=train_data.iloc[:,-1]
       single_detect_result = y.iloc[[SINGLE_DETECT_VALUE]]
       X_train, X_validation, y_train, y_validation = train_test_split(X, y, test_size=0.20, random_state=1)
+
+      #Plotting the first 9 rowsx
+      # plt.figure(figsize=(20,20))
+      # for i in range(9):
+      #    plt.subplot(3,3,i+1)
+      #    plt.plot(np.arange(0,187),X_train.iloc[i,:])
+      #    #plt.title(y_train[i])
+      # plt.show()
+
+
+
       # models = []
       # models.append(('LR', LogisticRegression(solver='liblinear', multi_class='ovr')))
       # models.append(('LDA', LinearDiscriminantAnalysis()))
@@ -152,12 +293,16 @@ def ml_function(argument):
       print("Type of x {}".format(type(X[8])))
       print("Xvalidation.shape:{}".format(X_validation.shape))
       print("-----")
-      model = KNeighborsClassifier()
+      model = DecisionTreeClassifier(criterion="entropy")
       model.fit(X_train, y_train)
       predictions = model.predict(X_validation)
       print(accuracy_score(y_validation, predictions))
       print(confusion_matrix(y_validation, predictions))
       print(classification_report(y_validation, predictions))
+      plt.figure(figsize=(10, 10))
+      cf_matrix = confusion_matrix(y_validation,predictions)
+      plot_confusion_matrix(cf_matrix, classes=['N', 'S', 'V', 'F', 'Q'],normalize=True,title='Confusion matrix, with normalization - sklearn')
+      plt.show()
       actual_result=model.predict(single_detect)
 
       if (actual_result == single_detect_result).bool() :
@@ -166,6 +311,14 @@ def ml_function(argument):
                print("Succesful detection with class {}".format(elem))
       else:
          print("Actual and expected result are not identical. False detection")
+
+      log_loss_var = log_loss(y_validation , model.predict_proba(X_validation))
+      print("Log loss is:{}".format(log_loss_var)) #Log-loss is indicative of how close the prediction probability is to the corresponding actual value
+      print('Hamming Loss : ', hamming_loss(y_validation, predictions)) #The Hamming loss is the fraction of labels that are incorrectly predicted
+      print('Zero-one Loss : ', zero_one_loss(y_validation, predictions)) #Fraction of Misclassificied Examples
+      endtime = datetime.now()
+      print("Time of Execution for sklearn:{}".format(endtime-starttime))
+
 if __name__ == "__main__":
    print("Start of Program")
    ml_function("tensorflow")
